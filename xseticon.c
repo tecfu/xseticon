@@ -41,6 +41,14 @@ typedef unsigned long int CARD32;
 char program_name[] = "xseticon";
 
 gboolean verbose = FALSE;
+gboolean no_interactive = FALSE;
+int fileParamIndex = -1;
+
+/* Function definitions */
+void abortprog(gchar* fname);
+void load_icon(gchar* filename, int* ndata, CARD32** data);
+
+/* Function bodies */
 
 void usage(int exitcode)
 {
@@ -48,6 +56,7 @@ void usage(int exitcode)
   printf("options:\n");
   printf("  -name <text>    : apply icon to the window of the name supplied\n");
   printf("  -id <windowid>  : apply icon to the window id supplied\n");
+  printf("  -no-interactive : flag needed to avoid offering to select a window when no match happens\n");
   printf("\n");
   printf("Sets the window icon to the specified .png image. The image is loaded from\n");
   printf("the file at runtime and sent to the X server; thereafter the file does not\n");
@@ -77,32 +86,64 @@ void Fatal_Error(char *msg, ...)
   exit(1);
 }
 
-Window Window_With_Name(Display* dpy, Window top, char* name)
+void applyIcon(Display* display, Window window, Atom property, char * filename)
+{
+  if (verbose)
+    printf("Have selected window 0x%08lx\n", window);
+  
+  guint nelements;
+  CARD32* data;
+
+  load_icon(filename, &nelements, &data);
+
+  int result = XChangeProperty(display, window, property, XA_CARDINAL, 32, PropModeReplace, 
+      (gchar*)data, nelements);
+
+  if(!result)
+    abortprog("XChangeProperty");
+
+  result = XFlush(display);
+
+  if(!result)
+    abortprog("XFlush");
+}
+
+Window Window_With_Name(Display* dpy, Window top, Atom property, char * filename, char* name)
 {
   Window *children, dummy;
   unsigned int nchildren;
   int i;
   Window w = 0;
+  Window iterW = 0;
   char *window_name;
 
-  if (XFetchName(dpy, top, &window_name) && strcasestr(window_name, name) != NULL)
+  if (XFetchName(dpy, top, &window_name) && strcasestr(window_name, name) != NULL) {
+    applyIcon(dpy,top,property,filename);
     return(top);
+  }
 
   if (!XQueryTree(dpy, top, &dummy, &dummy, &children, &nchildren))
     return(0);
 
   for (i=0; i<nchildren; i++) {
-          w = Window_With_Name(dpy, children[i], name);
+          iterW = Window_With_Name(dpy, children[i], property, filename, name);
+          /* Only the first match is returned */
+          if (w == 0)
+            w = iterW;
+          /*
           if (w)
             break;
+          */
   }
   if (children) XFree ((char *)children);
   return(w);
 }
 
-Window Select_Window_Args(Display* dpy, int screen, int* rargc, char* argv[])
+
+Window Select_Window_Args(Display* dpy, int screen, Atom property, char * filename, int* rargc, char* argv[])
 {
   int nargc = 1;
+  int iArgc = 0;
   int argc;
   char **nargv;
   Window w = 0;
@@ -110,40 +151,66 @@ Window Select_Window_Args(Display* dpy, int screen, int* rargc, char* argv[])
 #define ARGC (*rargc)
   nargv = argv+1; argc = ARGC;
 #define OPTION argv[0]
-#define NXTOPTP ++argv, --argc>0
-#define NXTOPT if (++argv, --argc==0) usage(1)
+#define NXTSINGLEOPT ++argv, ++iArgc, --argc
+#define NXTOPTP NXTSINGLEOPT>0
+#define NXTOPT if (NXTSINGLEOPT==0) usage(1)
 #define COPYOPT nargv++[0]=OPTION, nargc++
 
   while (NXTOPTP) {
+    if (OPTION[0] != '-') {
+      fileParamIndex = iArgc;
+      break;
+    }
+    
     if (!strcmp(OPTION, "-")) {
       COPYOPT;
       while (NXTOPTP)
         COPYOPT;
       break;
     }
+    if (!strcmp(OPTION, "-h") ||
+        !strcmp(OPTION, "--help")) {
+      usage(0);
+    }
+    if (!strcmp(OPTION, "-no-interactive")) {
+      if (verbose)
+        puts("If no match, no interactive selection will be offered\n");
+      no_interactive = TRUE;
+      continue;
+    }
+    if (!strcmp(OPTION, "-v")) {
+      verbose = TRUE;
+      continue;
+    }
     if (!strcmp(OPTION, "-name")) {
       NXTOPT;
-      if (verbose)
-        printf("Selecting window by name %s\n", OPTION);
-      w = Window_With_Name(dpy, RootWindow(dpy, screen),
-                           OPTION);
-      if (!w)
-        Fatal_Error("No window with name %s exists!",OPTION);
+      if (!w) {
+        if (verbose)
+          printf("Selecting window by name %s\n", OPTION);
+        w = Window_With_Name(dpy, RootWindow(dpy, screen),
+                              property, filename,
+                             OPTION);
+        if (!w)
+          Fatal_Error("No window with name %s exists!",OPTION);
+      }
       continue;
     }
     if (!strcmp(OPTION, "-id")) {
       NXTOPT;
-      if (verbose)
-        printf("Selecting window by ID %s\n", OPTION);
-      w=0;
-      sscanf(OPTION, "0x%lx", &w);
-      if (!w)
-        sscanf(OPTION, "%ld", &w);
-      if (!w)
-        Fatal_Error("Invalid window id format: %s.", OPTION);
+      if (!w) {
+        if (verbose)
+          printf("Selecting window by ID %s\n", OPTION);
+        w=0;
+        sscanf(OPTION, "0x%lx", &w);
+        if (!w)
+          sscanf(OPTION, "%ld", &w);
+        if (!w)
+          Fatal_Error("Invalid window id format: %s.", OPTION);
+        else
+          applyIcon(dpy,w,property, filename);
+      }
       continue;
     }
-    COPYOPT;
   }
   ARGC = nargc;
   
@@ -276,25 +343,33 @@ int main(int argc, char* argv[])
 
   if (!argv[1])
     usage(1);
-
-  guint argindex = 1;
-  if (!strcmp(argv[argindex], "-v")) {
-    verbose = TRUE;
-    argindex++;
-  }
-
+  
+  if (argv[argc-1][0] == '-')
+    abortprog("Select_Window_Args(no input file)");
+  
+  fileParamIndex = argc - 1;
+  char * filename = argv[fileParamIndex];
+  
   Display* display = XOpenDisplay(NULL);
 
-  XSynchronize(display, TRUE);
-
-  int screen = DefaultScreen(display);
-  
   if (!display)
     abortprog("XOpenDisplay");
 
-  Window window = Select_Window_Args(display, screen, &(argc), argv);
+  XSynchronize(display, TRUE);
 
-  if (!window) {
+  Atom property = XInternAtom(display, "_NET_WM_ICON", 0);
+
+  if (!property)
+    abortprog("XInternAtom(property)");
+
+  int screen = DefaultScreen(display);
+  
+  Window window = Select_Window_Args(display, screen, property, filename, &(argc), argv);
+  
+  if (fileParamIndex == -1)
+    abortprog("Select_Window_Args(no input file)");
+
+  if (!window && !no_interactive) {
     if (verbose)
       printf("Selecting window by mouse...\n");
     window = Select_Window_Mouse(display, screen);
@@ -307,33 +382,14 @@ int main(int argc, char* argv[])
                         &dummy, &dummy, &dummy, &dummy)
           && window != root)
           window = XmuClientWindow (display, window);
+      
+      applyIcon(display,window,property,filename);
     }
   }
-
-  if (verbose)
-    printf("Have selected window 0x%08lx\n", window);
-
-  Atom property = XInternAtom(display, "_NET_WM_ICON", 0);
-
-  if (!property)
-    abortprog("XInternAtom(property)");
-
-  guint nelements;
-  CARD32* data;
-
-  load_icon(argv[argindex], &nelements, &data);
-
-  int result = XChangeProperty(display, window, property, XA_CARDINAL, 32, PropModeReplace, 
-      (gchar*)data, nelements);
-
-  if(!result)
-    abortprog("XChangeProperty");
-
-  result = XFlush(display);
-
-  if(!result)
-    abortprog("XFlush");
-
+  
+  if (!window)
+    abortprog("No selection or no match!");
+  
   XCloseDisplay(display);
 }
 
