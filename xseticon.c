@@ -280,13 +280,13 @@ void load_icon(gchar* filename, int* ndata, CARD32** data)
 {
   FILE* iconfile = fopen(filename, "r");
 
-  if (!iconfile) {
+  if (iconfile) {
+    fclose(iconfile);
+  } else {
     abortprog("fopen()");
   }
 
-  gdImagePtr icon = gdImageCreateFromPng(iconfile);
-
-  fclose(iconfile);
+  gdImagePtr icon = gdImageCreateFromFile(filename);
 
   int width, height;
 
