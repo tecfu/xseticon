@@ -84,7 +84,7 @@ Window Window_With_Name(Display* dpy, Window top, char* name)
   Window w = 0;
   char *window_name;
 
-  if (XFetchName(dpy, top, &window_name) && !strcmp(window_name, name))
+  if (XFetchName(dpy, top, &window_name) && strcasestr(window_name, name) != NULL)
     return(top);
 
   if (!XQueryTree(dpy, top, &dummy, &dummy, &children, &nchildren))
