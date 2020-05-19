@@ -91,10 +91,11 @@ void applyIcon(Display* display, Window window, Atom property, char * filename)
   if (verbose)
     printf("Have selected window 0x%08lx\n", window);
   
-  guint nelements;
-  CARD32* data;
-
-  load_icon(filename, &nelements, &data);
+  static guint nelements;
+  static CARD32* data = NULL;
+  
+  if (data == NULL)
+    load_icon(filename, &nelements, &data);
 
   int result = XChangeProperty(display, window, property, XA_CARDINAL, 32, PropModeReplace, 
       (gchar*)data, nelements);
@@ -139,6 +140,58 @@ Window Window_With_Name(Display* dpy, Window top, Atom property, char * filename
   return(w);
 }
 
+int findFileParamIndex(int argc, char* argv[])
+{
+  int nargc = 1;
+  int iArgc = 0;
+  char **nargv;
+  Window w = 0;
+
+  nargv = argv+1;
+#define OPTION argv[0]
+#define NXTSINGLEOPT ++argv, ++iArgc, --argc
+#define NXTOPTP NXTSINGLEOPT>0
+#define NXTOPT if (NXTSINGLEOPT==0) usage(1)
+#define COPYOPT nargv++[0]=OPTION, nargc++
+
+  while (NXTOPTP) {
+    if (OPTION[0] != '-') {
+      return iArgc;
+      break;
+    }
+    
+    if (!strcmp(OPTION, "--")) {
+      NXTOPT;
+      return iArgc;
+    }
+    if (!strcmp(OPTION, "-h") ||
+        !strcmp(OPTION, "--help")) {
+      usage(0);
+    }
+    if (!strcmp(OPTION, "-no-interactive")) {
+      if (verbose)
+        puts("If no match, no interactive selection will be offered\n");
+      no_interactive = TRUE;
+      continue;
+    }
+    if (!strcmp(OPTION, "-v")) {
+      verbose = TRUE;
+      continue;
+    }
+    
+    if (!strcmp(OPTION, "-name")) {
+      NXTOPT;
+      continue;
+    }
+    if (!strcmp(OPTION, "-id")) {
+      NXTOPT;
+      continue;
+    }
+  }
+  
+  return -1;
+}
+
 
 Window Select_Window_Args(Display* dpy, int screen, Atom property, char * filename, int* rargc, char* argv[])
 {
@@ -157,30 +210,11 @@ Window Select_Window_Args(Display* dpy, int screen, Atom property, char * filena
 #define COPYOPT nargv++[0]=OPTION, nargc++
 
   while (NXTOPTP) {
-    if (OPTION[0] != '-') {
-      fileParamIndex = iArgc;
-      break;
-    }
-    
     if (!strcmp(OPTION, "-")) {
       COPYOPT;
       while (NXTOPTP)
         COPYOPT;
       break;
-    }
-    if (!strcmp(OPTION, "-h") ||
-        !strcmp(OPTION, "--help")) {
-      usage(0);
-    }
-    if (!strcmp(OPTION, "-no-interactive")) {
-      if (verbose)
-        puts("If no match, no interactive selection will be offered\n");
-      no_interactive = TRUE;
-      continue;
-    }
-    if (!strcmp(OPTION, "-v")) {
-      verbose = TRUE;
-      continue;
     }
     if (!strcmp(OPTION, "-name")) {
       NXTOPT;
@@ -344,10 +378,10 @@ int main(int argc, char* argv[])
   if (!argv[1])
     usage(1);
   
-  if (argv[argc-1][0] == '-')
+  fileParamIndex = findFileParamIndex(argc,argv);
+  if (fileParamIndex == -1)
     abortprog("Select_Window_Args(no input file)");
   
-  fileParamIndex = argc - 1;
   char * filename = argv[fileParamIndex];
   
   Display* display = XOpenDisplay(NULL);
