@@ -57,6 +57,7 @@ void usage(int exitcode)
   printf("  -name <text>    : apply icon to the window of the name supplied\n");
   printf("  -id <windowid>  : apply icon to the window id supplied\n");
   printf("  -no-interactive : flag needed to avoid offering to select a window when no match happens\n");
+  printf("  -v              : verbose messages\n");
   printf("\n");
   printf("Sets the window icon to the specified .png image. The image is loaded from\n");
   printf("the file at runtime and sent to the X server; thereafter the file does not\n");
@@ -111,32 +112,53 @@ void applyIcon(Display* display, Window window, Atom property, char * filename)
 
 Window Window_With_Name(Display* dpy, Window top, Atom property, char * filename, char* name)
 {
-  Window *children, dummy;
+  Window *children, root,parent;
   unsigned int nchildren;
   int i;
   Window w = 0;
   Window iterW = 0;
   char *window_name;
+  XTextProperty text_property;
 
-  if (XFetchName(dpy, top, &window_name) && strcasestr(window_name, name) != NULL) {
-    applyIcon(dpy,top,property,filename);
-    return(top);
+  if (XFetchName(dpy, top, &window_name)) {
+    if(verbose) {
+      printf("Found window 0x%08lx with name %s\n", top, window_name);
+    }
+    
+    if(strcasestr(window_name, name) != NULL) {
+      applyIcon(dpy,top,property,filename);
+      w = top;
+    }
+  }
+  
+  if (XGetWMName(dpy, top, &text_property)) {
+    if(verbose) {
+      printf("Found WM window 0x%08lx with name %s\n", top, text_property.value);
+    }
+    
+    if(strcasestr(text_property.value, name) != NULL) {
+      applyIcon(dpy,top,property,filename);
+      w = top;
+    }
   }
 
-  if (!XQueryTree(dpy, top, &dummy, &dummy, &children, &nchildren))
-    return(0);
-
+  if (!XQueryTree(dpy, top, &root, &parent, &children, &nchildren))
+    return(w);
+  
+  if(verbose) {
+    printf("Window 0x%08lx has as root window 0x%08lx and parent 0x%08lx with %u children\n",top,root,parent,nchildren);
+  }
   for (i=0; i<nchildren; i++) {
           iterW = Window_With_Name(dpy, children[i], property, filename, name);
           /* Only the first match is returned */
-          if (w == 0)
+          if (w == 0 && iterW != 0)
             w = iterW;
           /*
           if (w)
             break;
           */
   }
-  if (children) XFree ((char *)children);
+  if (children) XFree((char *)children);
   return(w);
 }
 
