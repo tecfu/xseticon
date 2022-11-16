@@ -30,7 +30,7 @@
 #include <X11/Xatom.h>
 #include <X11/Xmu/WinUtil.h>
 
-#include <gd.h>
+#include <Imlib2.h>
 
 /* We can't use the one defined in Xmd.h because that's an "unsigned int",
  * which comes out as a 32bit type always. We need this to be 64bit on 64bit
@@ -46,7 +46,7 @@ int fileParamIndex = -1;
 
 /* Function definitions */
 void abortprog(gchar* fname);
-void load_icon(gchar* filename, int* ndata, CARD32** data);
+void load_icon_imlib2(gchar* filename, int* ndata, CARD32** data);
 
 /* Function bodies */
 
@@ -96,7 +96,7 @@ void applyIcon(Display* display, Window window, Atom property, char * filename)
   static CARD32* data = NULL;
   
   if (data == NULL)
-    load_icon(filename, &nelements, &data);
+    load_icon_imlib2(filename, &nelements, &data);
 
   int result = XChangeProperty(display, window, property, XA_CARDINAL, 32, PropModeReplace, 
       (gchar*)data, nelements);
@@ -332,62 +332,50 @@ void abortprog(gchar* fname)
  *  not necessarily a 32bit one.
  */
 
-void load_icon(gchar* filename, int* ndata, CARD32** data)
+void load_icon_imlib2(gchar* filename, int* ndata, CARD32** data)
 {
-  FILE* iconfile = fopen(filename, "r");
+  Imlib_Image icon;
 
-  if (iconfile) {
-    fclose(iconfile);
-  } else {
-    abortprog("fopen()");
-  }
+  icon = imlib_load_image(filename);
+  if(icon) {
+    imlib_context_set_image(icon);
+    int width, height;
+    width = imlib_image_get_width();
+    height = imlib_image_get_height();
+    
+    if (verbose)
+      printf("Loaded a %dx%d icon\n", width, height);
 
-  gdImagePtr icon = gdImageCreateFromFile(filename);
+    (*ndata) = (width * height) + 2;
 
-  int width, height;
+    (*data) = g_new0(CARD32, (*ndata));
 
-  width = gdImageSX(icon);
-  height = gdImageSY(icon);
+    int i = 0;
+    (*data)[i++] = width;
+    (*data)[i++] = height;
 
-  if (verbose)
-    printf("Loaded a %dx%d icon\n", width, height);
-
-  (*ndata) = (width * height) + 2;
-
-  (*data) = g_new0(CARD32, (*ndata));
-
-  int i = 0;
-  (*data)[i++] = width;
-  (*data)[i++] = height;
-
-  int x, y;
-
-  for(y = 0; y < height; y++) {
-    for(x = 0; x < width; x++) {
-      // data is RGBA
-      // We'll do some horrible data-munging here
-      guint8* cols = (guint8*)&((*data)[i++]);
-      
-      int pixcolour = gdImageGetPixel(icon, x, y);
-
-      cols[0] = gdImageBlue(icon, pixcolour);
-      cols[1] = gdImageGreen(icon, pixcolour);
-      cols[2] = gdImageRed(icon, pixcolour);
-
-      /* Alpha is more difficult */
-      int alpha = 127 - gdImageAlpha(icon, pixcolour); // 0 to 127
-      
-      // Scale it up to 0 to 255; remembering that 2*127 should be max
-      if (alpha == 127)
-        alpha = 255;
-      else
-        alpha *= 2;
-      
-      cols[3] = alpha;
+    int x, y;
+    Imlib_Color the_pixel;
+    for(y = 0; y < height; y++) {
+      for(x = 0; x < width; x++) {
+        // data is RGBA
+        // We'll do some horrible data-munging here
+        guint8* cols = (guint8*)&((*data)[i++]);
+        
+        imlib_image_query_pixel(x, y, &the_pixel);
+        
+        cols[0] = the_pixel.blue;
+        cols[1] = the_pixel.green;
+        cols[2] = the_pixel.red;
+        cols[3] = the_pixel.alpha;
+      }
     }
+    
+    imlib_free_image();
+  } else {
+    abortprog("imlib_load_image()");
   }
 
-  gdImageDestroy(icon);
 }
 
 int main(int argc, char* argv[])
