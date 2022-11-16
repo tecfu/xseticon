@@ -2,12 +2,14 @@ Xterm, and likely many other X11 programs, do not set themselves window icons, w
 
 Usage
 =====
-    usage: xseticon [options] path/to/icon.png
+    usage: xseticon [options] path/to/icon.{png,jpg,svg}
     options:
       -name     : apply icon to the window of the name supplied
       -id   : apply icon to the window id supplied
     
-    Sets the window icon to the specified .png image. The image is loaded from
+    Sets the window icon to the specified image, in any of the formats supported by imlib2.
+    Depending on the version and the compiled features, it can handle additional formats
+    like SVG. The image is loaded from
     the file at runtime and sent to the X server; thereafter the file does not
     need to exist, and can be deleted/renamed/modified without the X server or
     window manager noticing.
@@ -25,7 +27,7 @@ On Ubuntu / Debian:
 
 ``` bash
 # Install dependencies
-sudo apt install libxmu-headers libgd-dev libxmu-dev libglib2.0-dev
+sudo apt install libxmu-headers libimlib2-ev libxmu-dev libglib2.0-dev
 # Build
 make
 # Install
@@ -35,21 +37,16 @@ On EL7:
 
 ```bash
 # Install dependencies
-sudo yum install libXmu-devel gd gd-devel glib2-devel
+sudo yum install libXmu-devel imlib2 imlib2-devel glib2-devel
 # Build
 make
 # Install
 sudo cp xseticon /usr/local/bin
 ```
-Using Snap (requires [snapd](https://docs.snapcraft.io/installing-snapd/6735)):
-
-```bash
-sudo snap install xseticon
-```
 
 Author
 ======
-This is xseticon from Paul Evans (http://www.leonerd.org.uk/).
+This is xseticon from José Mª Fernández (https://orcid.org/0000-0002-4806-5140) and originally from Paul Evans (http://www.leonerd.org.uk/).
 
 Note that there is another xseticon from Rustem Valeev on Sourceforge (https://sourceforge.net/projects/xseticon/).
 
