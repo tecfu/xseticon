@@ -27,7 +27,7 @@ On Ubuntu / Debian:
 
 ``` bash
 # Install dependencies
-sudo apt install libxmu-headers libimlib2-ev libxmu-dev libglib2.0-dev
+sudo apt install libxmu-headers libimlib2-dev libxmu-dev libglib2.0-dev
 # Build
 make
 # Install
